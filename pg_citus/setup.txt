@@ -1,0 +1,67 @@
+0, Reference
+# Install postgres
+https://www.postgresql.org/download/linux/ubuntu/
+https://docs.citusdata.com/en/stable/installation/multi_node_debian.html#
+# scale pg_bench
+https://www.percona.com/blog/how-to-scale-a-single-host-postgresql-database-with-citus/
+#citus setup
+https://github.com/citusdata/citus
+#Benchmark
+https://docs.citusdata.com/en/stable/extra/write_throughput_benchmark.html
+#max connections:
+https://stackoverflow.com/questions/2757549/org-postgresql-util-psqlexception-fatal-sorry-too-many-clients-already
+
+1, Install postgres
+curl https://install.citusdata.com/community/deb.sh | sudo bash
+sudo apt-get -y install postgresql-16-citus-12.1
+sudo pg_conftool 16 main set shared_preload_libraries citus
+sudo pg_conftool 16 main set listen_addresses '*'
+sudo vi /etc/postgresql/16/main/pg_hba.conf
+host    all             all             19.1.160.0/20              trust
+sudo service postgresql restart
+2, test using pgbench
+psql
+create database pgbench;
+\c pgbench
+create extension citus;
+
+#set up citus cluster
+
+psql pgbench <<_eof1_
+        select citus_set_coordinator_host('ip-19-1-164-8', 5432);
+        select citus_add_node('ip-19-1-162-194', 5432);
+        select citus_add_node('ip-19-1-162-50', 5432);
+_eof1_
+
+psql pg_bench
+select * from master_get_active_worker_nodes();
+#setup pgbench tables:
+psql pgbench <<_eof1_
+    BEGIN;
+        select create_distributed_table('pgbench_history', 'aid');
+        select create_distributed_table('pgbench_accounts', 'aid');
+        select create_distributed_table('pgbench_branches', 'bid');
+        select create_distributed_table('pgbench_tellers', 'tid');
+    COMMIT;
+_eof1_
+#populate tables
+pgbench -iI g -s 300 pgbench
+select * from citus_tables;
+select * from citus_shards;
+# add index
+pgbench -iI p pgbench
+pgbench -c 20 -j 3 -T 60 -P 3 pgbench
+transaction type: <builtin: TPC-B (sort of)>
+scaling factor: 300
+query mode: simple
+number of clients: 20
+number of threads: 3
+maximum number of tries: 1
+duration: 60 s
+number of transactions actually processed: 31789
+number of failed transactions: 0 (0.000%)
+latency average = 37.732 ms
+latency stddev = 6.403 ms
+initial connection time = 50.009 ms
+tps = 529.794574 (without initial connection time)
+ EOF
