@@ -1,0 +1,90 @@
+# 0, Ref:
+ #EKS networking
+   https://aws.amazon.com/blogs/containers/de-mystifying-cluster-networking-for-amazon-eks-worker-nodes/
+   https://docs.aws.amazon.com/vpc/latest/userguide/vpc-example-private-subnets-nat.html
+# 1, eks tools 
+Eksctl
+#Install eksctl
+# for ARM systems, set ARCH to: `arm64`, `armv6` or `armv7`
+ARCH=amd64
+PLATFORM=$(uname -s)_$ARCH
+
+curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$PLATFORM.tar.gz"
+
+# (Optional) Verify checksum
+curl -sL "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_checksums.txt" | grep $PLATFORM | sha256sum --check
+
+tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp && rm eksctl_$PLATFORM.tar.gz
+
+sudo mv /tmp/eksctl /usr/local/bin
+
+#kubectl
+curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.28.5/2024-01-04/bin/linux/amd64/kubectl
+chmod +x ./kubectl
+mkdir -p $HOME/bin && cp ./kubectl $HOME/bin/kubectl && export PATH=$HOME/bin:$PATH
+
+#docker
+yum install docker
+docker login
+# 2. EKS cluster
+   https://docs.aws.amazon.com/eks/latest/userguide/create-cluster.html 
+# 3.add the OIDC Provider Support to our cluster
+eksctl utils associate-iam-oidc-provider \
+   --region us-east-1 \
+   --cluster my-cluster \
+   --approve
+
+# 4. set up the necessary identities and permissions for EBS
+POLICY_ARN="arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+
+eksctl create iamserviceaccount \
+ --name "ebs-csi-controller-sa" \
+ --namespace "kube-system" \
+ --cluster my-cluster \
+ --region us-east-1 \
+ --attach-policy-arn $POLICY_ARN \
+ --role-only \
+ --role-name "ebs-csi-driver-role" \
+ --approve
+
+# 5. Export the account id and the role arn
+export ACCOUNT_ID=123456789 
+export ACCOUNT_ROLE_ARN="arn:aws:iam::$ACCOUNT_ID:role/ebs-csi-driver-role"
+
+# 6. add the EBS driver to the cluster
+eksctl create addon \
+ --name "aws-ebs-csi-driver" \
+ --cluster my-cluster \
+ --region=us-east-1 \
+ --service-account-role-arn $ACCOUNT_ROLE_ARN \
+ --force
+
+# 7. Get status of the driver, and wait until the status is ACTIVE
+eksctl get addon \
+ --name "aws-ebs-csi-driver" \
+ --region us-east-1 \
+ --cluster my-cluster
+
+# 8. check the ebs csi driver pods
+kubectl get pods \
+ --namespace "kube-system" \
+ --selector "app.kubernetes.io/name=aws-ebs-csi-driver"
+# 9. create the storage class for the EBS CSI driver
+cat << EOF > storageclass.yaml
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+ name: ebs-storage-class
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+EOF
+
+# 10. apply the storage class
+kubectl apply -f storageclass.yaml 
+ 
+# 11, Install Ingress controller
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.2.0/deploy/static/provider/aws/deploy.yaml
+ kubectl get svc -n ingress-nginx
+ping domain
