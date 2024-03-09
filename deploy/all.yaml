@@ -1,0 +1,169 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myapp-web
+  annotations:
+      nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+   - host: "topics.dev1.flickerpage.com"
+     http:
+      paths:
+      - pathType: Prefix
+        path: /
+        backend:
+          service:
+            name: nginx-topic
+            port:
+              number: 80
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: topic-api1
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: ebs-storage-class
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-topic-config
+  labels:
+    tier: backend
+data:
+  config : |
+    server {
+      index index.php index.html;
+      error_log  /var/log/nginx/error.log;
+      access_log /var/log/nginx/access.log;
+      add_header X-Frame-Options "SAMEORIGIN";
+      add_header X-XSS-Protection "1; mode=block";
+      add_header X-Content-Type-Options "nosniff";
+      root /var/www/public;
+      location / {
+        #    try_files  / /index.php?;
+            try_files  / /index.php;
+      }
+      location ~ \.php$ {
+          try_files  =404;
+          fastcgi_split_path_info ^(.+\.php)(/.+)$;
+          fastcgi_pass php-topic:9000;
+          fastcgi_index index.php;
+          include fastcgi_params;
+          fastcgi_param SCRIPT_FILENAME ;
+          fastcgi_param PATH_INFO ;
+        }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-topic
+  labels:
+    tier: backend
+spec:
+  selector:
+    app: nginx-topic
+    tier: backend
+  ports:
+    - protocol: TCP
+
+      port: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: php-topic
+  labels:
+    tier: backend
+spec:
+  selector:
+    app: php-topic
+    tier: backend
+  ports:
+    - protocol: TCP
+      port: 9000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: php-topic
+  labels:
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: php-topic
+      tier: backend
+  template:
+    metadata:
+      labels:
+        app: php-topic
+        tier: backend
+    spec:
+      imagePullSecrets:
+        - name: regcred
+      enableServiceLinks: false
+      containers:
+        - name: topic
+          image: ducnt134/larave_api1
+          imagePullPolicy: Always
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-topic
+  labels:
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-topic
+      tier: backend
+  template:
+    metadata:
+      labels:
+        app: nginx-topic
+        tier: backend
+    spec:
+      volumes:
+        - name: code
+          persistentVolumeClaim:
+            claimName: topic-api1
+        - name: config
+          configMap:
+            name: nginx-topic-config
+            items:
+              - key: config
+                path: site.conf
+      imagePullSecrets:
+        - name: regcred
+
+      initContainers:
+        - name: populate
+          image: ducnt134/larave_api1
+          imagePullPolicy: Always
+
+          volumeMounts:
+            - name: code
+              mountPath: /data
+          command: ['sh', '-c', 'cp -rf /var/www/* /data']
+
+      containers:
+        - name: nginx
+          image: nginx:1.21.0
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: code
+              mountPath: /var/www
+            - name: config
+              mountPath: /etc/nginx/conf.d
