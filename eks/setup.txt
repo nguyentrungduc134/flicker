@@ -20,6 +20,7 @@ sudo mv /tmp/eksctl /usr/local/bin
 
 #kubectl
 curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.28.5/2024-01-04/bin/linux/amd64/kubectl
+curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.29.0/2024-01-04/bin/linux/amd64/kubectl
 chmod +x ./kubectl
 mkdir -p $HOME/bin && cp ./kubectl $HOME/bin/kubectl && export PATH=$HOME/bin:$PATH
 
@@ -30,8 +31,8 @@ docker login
    https://docs.aws.amazon.com/eks/latest/userguide/create-cluster.html 
 # 3.add the OIDC Provider Support to our cluster
 eksctl utils associate-iam-oidc-provider \
-   --region us-east-1 \
-   --cluster my-cluster \
+   --region us-west-1 \
+   --cluster FP-DEV \
    --approve
 
 # 4. set up the necessary identities and permissions for EBS
@@ -40,8 +41,8 @@ POLICY_ARN="arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 eksctl create iamserviceaccount \
  --name "ebs-csi-controller-sa" \
  --namespace "kube-system" \
- --cluster my-cluster \
- --region us-east-1 \
+ --cluster FP-DEV \
+ --region us-west-1 \
  --attach-policy-arn $POLICY_ARN \
  --role-only \
  --role-name "ebs-csi-driver-role" \
@@ -54,16 +55,16 @@ export ACCOUNT_ROLE_ARN="arn:aws:iam::$ACCOUNT_ID:role/ebs-csi-driver-role"
 # 6. add the EBS driver to the cluster
 eksctl create addon \
  --name "aws-ebs-csi-driver" \
- --cluster my-cluster \
- --region=us-east-1 \
+ --cluster FP-DEV \
+ --region=us-west-1 \
  --service-account-role-arn $ACCOUNT_ROLE_ARN \
  --force
 
 # 7. Get status of the driver, and wait until the status is ACTIVE
 eksctl get addon \
  --name "aws-ebs-csi-driver" \
- --region us-east-1 \
- --cluster my-cluster
+ --region us-west-1 \
+ --cluster FP-DEV
 
 # 8. check the ebs csi driver pods
 kubectl get pods \
