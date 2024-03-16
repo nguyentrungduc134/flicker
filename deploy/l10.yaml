@@ -113,7 +113,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: l100
-          image: ducnt134/larave_api1
+          image: repos.app.fpsharedtech.com:8085/fp-api-auth-php-l10:latest
           imagePullPolicy: Always
 ---
 apiVersion: apps/v1
