@@ -1,1 +1,1 @@
-docker build -t laravel -f .docker/php/Dockerfile .
+docker build -t php-l10 .
