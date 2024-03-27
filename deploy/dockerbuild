@@ -1,1 +1,1 @@
-
+docker build -t laravel -f .docker/php/Dockerfile .
